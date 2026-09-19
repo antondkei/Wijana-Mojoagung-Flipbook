@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Life Ready School Profile — Wijana Mojoagung</title>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
+  <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.min.js"></script>
+
+  <style>
+    :root {
+      --blue: #004483;
+      --blue-dark: #002240;
+      --yellow: #f7b719;
+      --white: #fff;
+      --text: #eef5fb;
+      --muted: #8cabc3;
+      --line: rgba(255, 255, 255, 0.08);
+      --shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+      --glass: rgba(5, 20, 35, 0.65);
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; min-height: 100%; background: #030a11; color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+    }
+    body { overflow-x: hidden; }
+    /* Untuk browser berbasis WebKit (Chrome, Safari, Edge) */
+    .element-container::-webkit-scrollbar {
+      display: none;
+    }
+
+    /* Untuk IE, Edge, dan Firefox */
+    .element-container {
+      -ms-overflow-style: none;  /* IE dan Edge */
+      scrollbar-width: none;  /* Firefox */
+    }
+
+    .app {
+      min-height: 100vh; display: grid; grid-template-rows: auto 1fr auto;
+      background: radial-gradient(circle at 50% 0%, rgba(0, 75, 134, 0.2) 0%, transparent 50%),
+                  radial-gradient(circle at 100% 100%, rgba(247, 183, 25, 0.05) 0%, transparent 40%), #030a11;
+      position: relative;
+    }
+
+    header {
+      height: 72px; display: flex; align-items: center; justify-content: space-between;
+      padding: 0 28px; border-bottom: 1px solid var(--line);
+      background: var(--glass); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+      position: relative; z-index: 20;
+    }
+
+    .brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+    .brand-mark { width: 6px; height: 34px; border-radius: 4px; background: var(--yellow); box-shadow: 0 0 16px rgba(247, 183, 25, 0.4); }
+    .brand-copy { min-width: 0; }
+    .brand-title { font-size: 14px; font-weight: 800; letter-spacing: 0.08em; white-space: nowrap; }
+    .brand-sub { font-size: 11px; color: var(--muted); margin-top: 4px; white-space: nowrap; font-weight: 500; }
+
+    .top-actions { display: flex; gap: 10px; }
+    button {
+      appearance: none; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04);
+      color: var(--white); height: 40px; min-width: 40px; padding: 0 14px; border-radius: 8px;
+      cursor: pointer; font: inherit; font-size: 13px; font-weight: 500;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); display: flex; align-items: center; justify-content: center;
+    }
+    button:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.2); transform: translateY(-1px); }
+    button:active { transform: translateY(1px); }
+    button:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+    
+    .primary { background: var(--yellow); border-color: var(--yellow); color: #111; font-weight: 700; }
+    .primary:hover { background: #ffc73e; border-color: #ffc73e; box-shadow: 0 4px 12px rgba(247, 183, 25, 0.3); }
+
+    main {
+      min-height: 0; display: flex; align-items: center; justify-content: center;
+      padding: 40px 24px; position: relative;
+    }
+
+    #book-wrap {
+      width: min(94vw, 1200px); height: min(78vh, 800px); min-height: 400px;
+      display: flex; align-items: center; justify-content: center;
+      position: relative; perspective: 1500px;
+    }
+    
+    #book-wrap::before {
+      content: ""; position: absolute; inset: -20px;
+      background: radial-gradient(circle, rgba(255,255,255,0.03) 0%, transparent 60%);
+      filter: blur(40px); z-index: 0; pointer-events: none;
+    }
+
+    #book {
+      z-index: 1;
+      filter: drop-shadow(0 25px 45px rgba(0, 0, 0, 0.7)) drop-shadow(0 0 15px rgba(0, 0, 0, 0.4));
+      /* Transisi transform untuk efek sliding di desktop */
+      transition: transform 0.75s cubic-bezier(0.645, 0.045, 0.355, 1);
+      will-change: transform;
+    }
+
+    .page {
+      background: #fff; overflow: hidden;
+      box-shadow: inset -1px 0 3px rgba(0,0,0,0.05), inset 0 0 0 1px rgba(0,0,0,0.05);
+    }
+    .page canvas { display: block; width: 100%; height: 100%; }
+    
+    .page.--left { box-shadow: inset -15px 0 25px -15px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(0,0,0,0.05); }
+    .page.--right { box-shadow: inset 15px 0 25px -15px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(0,0,0,0.05); }
+
+    .loading, .error {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      z-index: 30; pointer-events: none;
+    }
+    .error { background: rgba(3, 10, 17, 0.95); pointer-events: auto; display: none; text-align: center; }
+    
+    .loading-card, .error-card {
+      background: rgba(10, 25, 40, 0.7); border: 1px solid var(--line); border-radius: 12px;
+      padding: 24px 32px; text-align: center; box-shadow: var(--shadow);
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    }
+    
+    .spinner {
+      width: 32px; height: 32px; margin: 0 auto 16px; border-radius: 50%;
+      border: 3px solid rgba(255, 255, 255, 0.1); border-top-color: var(--yellow);
+      animation: spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    footer {
+      height: 72px; display: flex; align-items: center; justify-content: center; gap: 10px;
+      padding: 8px 24px; border-top: 1px solid var(--line);
+      background: var(--glass); backdrop-filter: blur(24px); position: relative; z-index: 20;
+    }
+    .toolbar { display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 12px; border: 1px solid var(--line); }
+    .page-count {
+      min-width: 130px; text-align: center; font-size: 13px; font-weight: 600; color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .hint { position: absolute; right: 28px; color: #5a7b96; font-size: 12px; font-weight: 500; }
+
+    /* LAYOUT KHUSUS MOBILE: FULL PAGE */
+    @media (max-width: 768px) {
+      header { height: 64px; padding: 0 16px; }
+      .brand-title { font-size: 12px; } .brand-sub { font-size: 9px; }
+      .top-actions .optional { display: none; }
+      main { padding: 16px 0; }
+      #book-wrap { width: 95vw; height: 75vh; min-height: 380px; }
+      footer { height: 68px; padding: 0 12px; }
+      .toolbar { gap: 4px; padding: 4px; }
+      button { height: 36px; min-width: 36px; padding: 0 10px; border-radius: 6px; }
+      .hint { display: none; }
+      .page-count { min-width: 90px; font-size: 12px; }
+    }
+  </style>
+</head>
+
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div class="brand-copy">
+        <div class="brand-title">PS-TK-SD KATOLIK WIJANA MOJOAGUNG</div>
+        <div class="brand-sub">Life Ready School Profile · Preparing Students for Life</div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button id="fullscreen" class="optional" title="Layar penuh">⛶</button>
+      <button id="download" class="optional" title="Download PDF">↓ PDF</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="book-wrap">
+      <div id="book"></div>
+      <div class="loading" id="loading">
+        <div class="loading-card">
+          <div class="spinner"></div>
+          <div id="loadingText" style="font-size: 14px; font-weight: 500; color: #eef5fb;">Menyiapkan booklet…</div>
+        </div>
+      </div>
+      <div class="error" id="error">
+        <div class="error-card">
+          <h2 style="margin: 0 0 12px; font-size: 18px;">Booklet belum dapat dibuka</h2>
+          <p id="errorText" style="color: var(--muted); line-height: 1.6; margin: 0; font-size: 14px;"></p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <div class="toolbar">
+      <button id="prev" title="Halaman sebelumnya">←</button>
+      <div class="page-count" id="pageCount">— / —</div>
+      <button id="next" class="primary" title="Halaman berikutnya">→</button>
+      <button id="zoomOut" title="Perkecil" style="margin-left: 8px;">−</button>
+      <button id="zoomIn" title="Perbesar">+</button>
+    </div>
+    <div class="hint">← → untuk berpindah halaman · F untuk fullscreen</div>
+  </footer>
+</div>
+
+<script type="module">
+  import * as pdfjsLib from "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs";
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
+
+  const PDF_URL = "./booklet.pdf";
+  const bookEl = document.getElementById("book");
+  const wrap = document.getElementById("book-wrap");
+  const loading = document.getElementById("loading");
+  const loadingText = document.getElementById("loadingText");
+  const errorBox = document.getElementById("error");
+  const errorText = document.getElementById("errorText");
+  const pageCount = document.getElementById("pageCount");
+
+  let pdf = null;
+  let flip = null;
+  
+  let zoom = 1;
+  let translateX = 0;
+  let pageW = 0;
+  let isMobile = false;
+
+  function setLoading(text){ loadingText.textContent = text; }
+
+  function showError(err){
+    loading.style.display = "none";
+    errorBox.style.display = "flex";
+    errorText.textContent = (err && err.message) ? err.message : "Pastikan file booklet.pdf berada satu folder dengan index.html.";
+    console.error(err);
+  }
+
+  function applyTransform(){
+    bookEl.style.transform = `translateX(${translateX}px) scale(${zoom})`;
+    bookEl.style.transformOrigin = "center center";
+  }
+
+  function updateBookPosition(pageIndex) {
+    if (isMobile) {
+      // Pada mobile, buku dikunci 100% di tengah tanpa ada pergeseran sama sekali
+      translateX = 0;
+    } else {
+      // Pada desktop, geser buku sesuai dengan posisi halaman yang dibuka (Cover, Isi, Back Cover)
+      if (pageIndex === 0) {
+        translateX = -(pageW / 2);
+      } 
+      else if (pageIndex === pdf.numPages - 1 && pdf.numPages % 2 === 0) {
+        translateX = (pageW / 2);
+      } 
+      else {
+        translateX = 0;
+      }
+    }
+    applyTransform();
+  }
+
+  async function renderPage(pageNumber, canvas){
+    const page = await pdf.getPage(pageNumber);
+    const base = page.getViewport({scale: 1});
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const scale = Math.max(1.5, dpr * 1.25);
+    const viewport = page.getViewport({scale});
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    canvas.style.aspectRatio = `${base.width}/${base.height}`;
+    const ctx = canvas.getContext("2d", {alpha: false});
+    await page.render({canvasContext: ctx, viewport}).promise;
+  }
+
+  async function buildBook(){
+    try {
+      setLoading("Membaca PDF…");
+      pdf = await pdfjsLib.getDocument(PDF_URL).promise;
+
+      const first = await pdf.getPage(1);
+      const vp = first.getViewport({scale: 1});
+      const ratio = vp.width / vp.height;
+
+      // Cek layar (menggunakan 768px menyesuaikan CSS mobile breakpoint)
+      isMobile = window.innerWidth <= 768;
+
+      const maxSinglePageW = isMobile ? wrap.clientWidth : wrap.clientWidth / 2;
+      const maxSinglePageH = wrap.clientHeight;
+
+      const pageH = Math.min(maxSinglePageH, maxSinglePageW / ratio);
+      pageW = pageH * ratio; 
+
+      bookEl.style.width = isMobile ? `${Math.round(pageW)}px` : `${Math.round(pageW * 2)}px`;
+      bookEl.style.height = `${Math.round(pageH)}px`;
+
+      flip = new St.PageFlip(bookEl, {
+        width: Math.round(pageW),
+        height: Math.round(pageH),
+        size: "fixed",
+        minWidth: 260,
+        maxWidth: 900,
+        minHeight: 360,
+        maxHeight: 1200,
+        
+        // KUNCI PERBAIKAN: Matikan mode showCover pada layar mobile agar
+        // library memperlakukan booklet murni sebagai tampilan 1 halaman.
+        showCover: !isMobile, 
+        usePortrait: isMobile, // Paksa portrait mode di mobile
+        
+        mobileScrollSupport: true,
+        maxShadowOpacity: 0.6,
+        flippingTime: 750, 
+        autoSize: false,
+        drawShadow: true,
+        startPage: 0
+      });
+
+      const pages = [];
+      for(let i = 1; i <= pdf.numPages; i++){
+        const page = document.createElement("div");
+        page.className = "page";
+        const canvas = document.createElement("canvas");
+        canvas.setAttribute("aria-label", `Halaman ${i}`);
+        page.appendChild(canvas);
+        pages.push(page);
+
+        setLoading(`Menyiapkan halaman ${i} dari ${pdf.numPages}…`);
+        await renderPage(i, canvas);
+      }
+
+      flip.loadFromHTML(pages);
+      
+      updateBookPosition(0);
+      
+      pageCount.textContent = isMobile ? `1 / ${pdf.numPages}` : `Cover (1 / ${pdf.numPages})`;
+      loading.style.display = "none";
+
+      flip.on("flip", e => {
+        const current = e.data; 
+        
+        updateBookPosition(current);
+
+        let text = "";
+        if (isMobile) {
+          text = `${current + 1} / ${pdf.numPages}`;
+        } else {
+          if (current === 0) {
+            text = `Cover (1 / ${pdf.numPages})`;
+          } else if (current === pdf.numPages - 1 && pdf.numPages % 2 === 0) {
+            text = `Back Cover (${pdf.numPages} / ${pdf.numPages})`;
+          } else {
+            const rightPage = Math.min(current + 2, pdf.numPages);
+            text = `${current + 1} - ${rightPage} / ${pdf.numPages}`;
+          }
+        }
+        pageCount.textContent = text;
+      });
+
+      document.getElementById("prev").onclick = () => flip.flipPrev();
+      document.getElementById("next").onclick = () => flip.flipNext();
+      document.getElementById("zoomIn").onclick = () => { zoom = Math.min(1.4, zoom + 0.1); applyTransform(); };
+      document.getElementById("zoomOut").onclick = () => { zoom = Math.max(0.8, zoom - 0.1); applyTransform(); };
+      document.getElementById("fullscreen").onclick = async () => {
+        if(!document.fullscreenElement) await document.documentElement.requestFullscreen?.();
+        else await document.exitFullscreen?.();
+      };
+      document.getElementById("download").onclick = () => {
+        const a = document.createElement("a"); a.href = PDF_URL;
+        a.download = "Life-Ready-School-Profile-Wijana-Mojoagung.pdf"; a.click();
+      };
+
+      document.addEventListener("keydown", e => {
+        if(e.key === "ArrowLeft") flip.flipPrev();
+        if(e.key === "ArrowRight") flip.flipNext();
+        if(e.key.toLowerCase() === "f") document.getElementById("fullscreen").click();
+        if(e.key === "+" || e.key === "=") { zoom = Math.min(1.4, zoom + 0.1); applyTransform(); }
+        if(e.key === "-") { zoom = Math.max(0.8, zoom - 0.1); applyTransform(); }
+      });
+
+    } catch(err) {
+      showError(err);
+    }
+  }
+
+  buildBook();
+</script>
+</body>
+</html>
