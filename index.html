@@ -5,8 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Life Ready School Profile — Wijana Mojoagung</title>
 
-  <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
-  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
   <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.min.js"></script>
 
@@ -29,8 +27,16 @@
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
     }
     body { overflow-x: hidden; }
-    .element-container::-webkit-scrollbar { display: none; }
-    .element-container { -ms-overflow-style: none; scrollbar-width: none; }
+    /* Untuk browser berbasis WebKit (Chrome, Safari, Edge) */
+    .element-container::-webkit-scrollbar {
+      display: none;
+    }
+
+    /* Untuk IE, Edge, dan Firefox */
+    .element-container {
+      -ms-overflow-style: none;  /* IE dan Edge */
+      scrollbar-width: none;  /* Firefox */
+    }
 
     .app {
       min-height: 100vh; display: grid; grid-template-rows: auto 1fr auto;
@@ -68,24 +74,15 @@
 
     main {
       min-height: 0; display: flex; align-items: center; justify-content: center;
-      padding: 40px 24px; position: relative; overflow: hidden;
+      padding: 40px 24px; position: relative;
     }
 
     #book-wrap {
       width: min(94vw, 1200px); height: min(78vh, 800px); min-height: 400px;
       display: flex; align-items: center; justify-content: center;
       position: relative; perspective: 1500px;
-      touch-action: pan-y; /* Izinkan scroll vertikal saat zoom 1x */
     }
     
-    #book-wrap.is-zoomed {
-      touch-action: none; /* Ambil alih penuh gestur sentuh saat posisi zoom */
-      cursor: grab;
-    }
-    #book-wrap.is-zoomed:active {
-      cursor: grabbing;
-    }
-
     #book-wrap::before {
       content: ""; position: absolute; inset: -20px;
       background: radial-gradient(circle, rgba(255,255,255,0.03) 0%, transparent 60%);
@@ -95,29 +92,17 @@
     #book {
       z-index: 1;
       filter: drop-shadow(0 25px 45px rgba(0, 0, 0, 0.7)) drop-shadow(0 0 15px rgba(0, 0, 0, 0.4));
+      /* Transisi transform untuk efek sliding di desktop */
       transition: transform 0.75s cubic-bezier(0.645, 0.045, 0.355, 1);
       will-change: transform;
     }
 
-    /* Matikan transisi CSS saat jari sedang melakukan pinch/pan agar responsif real-time */
-    #book.no-transition {
-      transition: none !important;
-    }
-
     .page {
-      background: #f4f7fa; overflow: hidden; position: relative;
+      background: #fff; overflow: hidden;
       box-shadow: inset -1px 0 3px rgba(0,0,0,0.05), inset 0 0 0 1px rgba(0,0,0,0.05);
     }
-    .page.is-rendering::after {
-      content: ""; position: absolute; inset: 0;
-      background: linear-gradient(90deg, transparent 25%, rgba(0, 68, 131, 0.06) 50%, transparent 75%);
-      background-size: 200% 100%;
-      animation: shimmer 1.2s infinite;
-      pointer-events: none;
-    }
-    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-
     .page canvas { display: block; width: 100%; height: 100%; }
+    
     .page.--left { box-shadow: inset -15px 0 25px -15px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(0,0,0,0.05); }
     .page.--right { box-shadow: inset 15px 0 25px -15px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(0,0,0,0.05); }
 
@@ -152,6 +137,7 @@
     }
     .hint { position: absolute; right: 28px; color: #5a7b96; font-size: 12px; font-weight: 500; }
 
+    /* LAYOUT KHUSUS MOBILE: FULL PAGE */
     @media (max-width: 768px) {
       header { height: 64px; padding: 0 16px; }
       .brand-title { font-size: 12px; } .brand-sub { font-size: 9px; }
@@ -228,96 +214,70 @@
 
   let pdf = null;
   let flip = null;
-  
-  // Variabel Zoom & Panning
-  const MIN_ZOOM = 1;
-  const MAX_ZOOM = 2.6;
   let zoom = 1;
-  let baseTranslateX = 0; // Posisi geser cover/back-cover desktop
-  let panX = 0;           // Posisi geser jari/mouse saat zoom > 1
-  let panY = 0;
+  let translateX = 0;
   let pageW = 0;
   let pageH = 0;
   let isMobile = false;
 
+  // Pelacakan status render setiap halaman agar tidak di-render ganda
   const renderedPages = new Set();
   const renderingPromises = new Map();
-  let pageElements = [];
+  const canvases = [];
 
-  function setLoading(text){ loadingText.textContent = text; }
+  function setLoading(text) { loadingText.textContent = text; }
 
-  function showError(err){
+  function showError(err) {
     loading.style.display = "none";
     errorBox.style.display = "flex";
-    errorText.textContent = (err && err.message) ? err.message : "Pastikan file booklet.pdf berada satu folder dengan index.html.";
+    errorText.textContent = (err && err.message) ? err.message : "Pastikan file booklet.pdf dapat diakses.";
     console.error(err);
   }
 
-  function clampPan() {
-    if (zoom <= 1.01) {
-      panX = 0;
-      panY = 0;
-      wrap.classList.remove("is-zoomed");
-      return;
-    }
-    wrap.classList.add("is-zoomed");
-    const bookWidth = isMobile ? pageW : pageW * 2;
-    const maxPanX = ((bookWidth * zoom) - wrap.clientWidth) / 2 + 40;
-    const maxPanY = ((pageH * zoom) - wrap.clientHeight) / 2 + 40;
-    panX = Math.max(-Math.max(0, maxPanX), Math.min(Math.max(0, maxPanX), panX));
-    panY = Math.max(-Math.max(0, maxPanY), Math.min(Math.max(0, maxPanY), panY));
-  }
-
-  function applyTransform(){
-    clampPan();
-    const totalX = baseTranslateX + panX;
-    bookEl.style.transform = `translate3d(${totalX}px, ${panY}px, 0) scale(${zoom})`;
+  function applyTransform() {
+    bookEl.style.transform = `translateX(${translateX}px) scale(${zoom})`;
     bookEl.style.transformOrigin = "center center";
   }
 
   function updateBookPosition(pageIndex) {
     if (isMobile) {
-      baseTranslateX = 0;
+      translateX = 0;
     } else {
       if (pageIndex === 0) {
-        baseTranslateX = -(pageW / 2);
+        translateX = -(pageW / 2);
       } else if (pageIndex === pdf.numPages - 1 && pdf.numPages % 2 === 0) {
-        baseTranslateX = (pageW / 2);
+        translateX = (pageW / 2);
       } else {
-        baseTranslateX = 0;
+        translateX = 0;
       }
     }
     applyTransform();
   }
 
-  // Render RESOLUSI TINGGI (Tajam saat di-zoom)
-  function ensurePageRendered(pageNumber) {
-    if (pageNumber < 1 || pageNumber > pdf.numPages) return Promise.resolve();
-    if (renderedPages.has(pageNumber)) return Promise.resolve();
+  // Fungsi render on-demand dengan resolusi presisi sesuai ukuran layar
+  async function ensurePageRendered(pageNumber) {
+    if (pageNumber < 1 || pageNumber > pdf.numPages) return;
+    if (renderedPages.has(pageNumber)) return;
     if (renderingPromises.has(pageNumber)) return renderingPromises.get(pageNumber);
-
-    const pageDiv = pageElements[pageNumber - 1];
-    const canvas = pageDiv.querySelector("canvas");
 
     const task = (async () => {
       try {
         const page = await pdf.getPage(pageNumber);
         const base = page.getViewport({ scale: 1 });
         
-        // Pertahankan kepadatan piksel tinggi (2.5x - 3.0x) agar teks tetap tajam saat zoom 2.5x
-        const dpr = Math.min(window.devicePixelRatio || 1, 2);
-        const scale = Math.max(2.5, dpr * 1.5);
-        
-        const viewport = page.getViewport({ scale });
+        // Sesuaikan skala persis dengan lebar tampilan + max DPR 1.5 agar tajam namun ringan
+        const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+        const targetScale = (pageW / base.width) * dpr;
+        const viewport = page.getViewport({ scale: targetScale });
+
+        const canvas = canvases[pageNumber - 1];
         canvas.width = Math.floor(viewport.width);
         canvas.height = Math.floor(viewport.height);
         canvas.style.aspectRatio = `${base.width}/${base.height}`;
-        
+
         const ctx = canvas.getContext("2d", { alpha: false });
         await page.render({ canvasContext: ctx, viewport }).promise;
-        
         renderedPages.add(pageNumber);
-        pageDiv.classList.remove("is-rendering");
       } finally {
         renderingPromises.delete(pageNumber);
       }
@@ -327,124 +287,44 @@
     return task;
   }
 
-  function prioritizeAround(pageIndex) {
-    const current = pageIndex + 1;
-    const targets = [current - 1, current, current + 1, current + 2, current + 3];
-    targets.forEach(num => ensurePageRendered(num));
+  // Preload halaman sekitar posisi aktif + render sisa halaman secara santai di background
+  async function preloadAround(centerPage1Based) {
+    const targets = [
+      centerPage1Based,
+      centerPage1Based + 1,
+      centerPage1Based + 2,
+      centerPage1Based + 3,
+      centerPage1Based - 1
+    ];
+    await Promise.all(targets.map(p => ensurePageRendered(p)));
   }
 
-  async function renderRemainingInBackground() {
-    for (let i = 1; i <= pdf.numPages; i++) {
-      if (!renderedPages.has(i)) {
-        await ensurePageRendered(i);
-        // Jeda 60ms agar render resolusi tinggi di background tidak membuat UI patah-patah
-        await new Promise(r => setTimeout(r, 60));
+  function backgroundRenderRemaining() {
+    let current = 1;
+    const step = async () => {
+      while (current <= pdf.numPages && renderedPages.has(current)) {
+        current++;
       }
-    }
+      if (current <= pdf.numPages) {
+        await ensurePageRendered(current);
+        current++;
+        // Beri jeda 50ms agar animasi flip tetap mulus 60fps
+        setTimeout(step, 50);
+      }
+    };
+    setTimeout(step, 400);
   }
 
-  // ==========================================
-  // FITUR PINCH-TO-ZOOM, PAN & DOUBLE-TAP MOBILE
-  // ==========================================
-  function setupTouchGestures() {
-    let initialPinchDist = 0;
-    let initialZoom = 1;
-    let isPinching = false;
-    let isPanning = false;
-    let startPanX = 0;
-    let startPanY = 0;
-    let lastTapTime = 0;
-
-    const getDistance = (t1, t2) => Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-
-    // Tangkap event pada fase capture agar St.PageFlip tidak ikut membalik halaman saat zooming/panning
-    wrap.addEventListener("touchstart", (e) => {
-      if (e.touches.length === 2) {
-        isPinching = true;
-        isPanning = false;
-        bookEl.classList.add("no-transition");
-        initialPinchDist = getDistance(e.touches[0], e.touches[1]);
-        initialZoom = zoom;
-        e.stopPropagation();
-      } else if (e.touches.length === 1) {
-        // Deteksi Double-Tap untuk zoom cepat (1x <-> 2.2x)
-        const now = Date.now();
-        if (now - lastTapTime < 280) {
-          e.preventDefault();
-          e.stopPropagation();
-          bookEl.classList.remove("no-transition");
-          if (zoom > 1.1) {
-            zoom = 1;
-            panX = 0;
-            panY = 0;
-          } else {
-            zoom = 2.2;
-          }
-          applyTransform();
-          lastTapTime = 0;
-          return;
-        }
-        lastTapTime = now;
-
-        // Jika posisi sedang zoomed-in, 1 jari digunakan untuk menggeser (pan) area baca
-        if (zoom > 1.05) {
-          isPanning = true;
-          bookEl.classList.add("no-transition");
-          startPanX = e.touches[0].clientX - panX;
-          startPanY = e.touches[0].clientY - panY;
-          e.stopPropagation();
-        }
-      }
-    }, { capture: true, passive: false });
-
-    wrap.addEventListener("touchmove", (e) => {
-      if (isPinching && e.touches.length === 2) {
-        e.preventDefault();
-        e.stopPropagation();
-        const dist = getDistance(e.touches[0], e.touches[1]);
-        const scaleFactor = dist / initialPinchDist;
-        zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, initialZoom * scaleFactor));
-        applyTransform();
-      } else if (isPanning && e.touches.length === 1 && zoom > 1.05) {
-        e.preventDefault();
-        e.stopPropagation();
-        panX = e.touches[0].clientX - startPanX;
-        panY = e.touches[0].clientY - startPanY;
-        applyTransform();
-      }
-    }, { capture: true, passive: false });
-
-    wrap.addEventListener("touchend", (e) => {
-      if (isPinching || isPanning) {
-        e.stopPropagation();
-      }
-      if (e.touches.length < 2) {
-        isPinching = false;
-      }
-      if (e.touches.length === 0) {
-        isPanning = false;
-        bookEl.classList.remove("no-transition");
-        if (zoom <= 1.05) {
-          zoom = 1;
-          panX = 0;
-          panY = 0;
-          applyTransform();
-        }
-      }
-    }, { capture: true });
-  }
-
-  async function buildBook(){
+  async function buildBook() {
     try {
-      setLoading("Membuka dokumen…");
-      
+      setLoading("Memuat sampul booklet…");
+
+      // Aktifkan range request / streaming jika server mendukung
       const loadingTask = pdfjsLib.getDocument({
         url: PDF_URL,
-        rangeChunkSize: 65536,
-        disableAutoFetch: false,
+        disableAutoFetch: true,
         disableStream: false
       });
-
       pdf = await loadingTask.promise;
 
       const first = await pdf.getPage(1);
@@ -457,7 +337,7 @@
       const maxSinglePageH = wrap.clientHeight;
 
       pageH = Math.min(maxSinglePageH, maxSinglePageW / ratio);
-      pageW = pageH * ratio; 
+      pageW = pageH * ratio;
 
       bookEl.style.width = isMobile ? `${Math.round(pageW)}px` : `${Math.round(pageW * 2)}px`;
       bookEl.style.height = `${Math.round(pageH)}px`;
@@ -470,56 +350,46 @@
         maxWidth: 900,
         minHeight: 360,
         maxHeight: 1200,
-        showCover: !isMobile, 
+        showCover: !isMobile,
         usePortrait: isMobile,
         mobileScrollSupport: true,
         maxShadowOpacity: 0.6,
-        flippingTime: 750, 
+        flippingTime: 750,
         autoSize: false,
         drawShadow: true,
         startPage: 0
       });
 
-      pageElements = [];
+      // 1. Buat kerangka DOM kosong secara instan (0 ms)
+      const pages = [];
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = document.createElement("div");
-        page.className = "page is-rendering";
+        page.className = "page";
         const canvas = document.createElement("canvas");
         canvas.setAttribute("aria-label", `Halaman ${i}`);
         page.appendChild(canvas);
-        pageElements.push(page);
+        pages.push(page);
+        canvases.push(canvas);
       }
 
-      // Render halaman awal beresolusi tinggi sebelum membuka buku
-      setLoading("Menyiapkan sampul resolusi tinggi…");
-      const initialPages = Math.min(3, pdf.numPages);
-      const initialTasks = [];
-      for (let i = 1; i <= initialPages; i++) {
-        initialTasks.push(ensurePageRendered(i));
-      }
-      await Promise.all(initialTasks);
+      flip.loadFromHTML(pages);
 
-      flip.loadFromHTML(pageElements);
+      // 2. Render HANYA halaman 1, 2, dan 3 terlebih dahulu agar langsung tampil
+      await preloadAround(1);
+
       updateBookPosition(0);
       pageCount.textContent = isMobile ? `1 / ${pdf.numPages}` : `Cover (1 / ${pdf.numPages})`;
       loading.style.display = "none";
 
-      // Aktifkan gestur sentuh mobile
-      setupTouchGestures();
-
-      // Render sisa halaman beresolusi tinggi secara bertahap di latar belakang
-      renderRemainingInBackground();
+      // 3. Render sisa halaman secara diam-diam di latar belakang
+      backgroundRenderRemaining();
 
       flip.on("flip", e => {
-        const current = e.data; 
-        // Reset zoom otomatis saat berpindah halaman agar posisi rapi
-        if (zoom > 1) {
-          zoom = 1;
-          panX = 0;
-          panY = 0;
-        }
+        const current = e.data; // 0-based index
         updateBookPosition(current);
-        prioritizeAround(current);
+
+        // Pastikan halaman yang dibuka & 2 halaman berikutnya sudah siap
+        preloadAround(current + 1);
 
         let text = "";
         if (isMobile) {
@@ -539,32 +409,28 @@
 
       document.getElementById("prev").onclick = () => flip.flipPrev();
       document.getElementById("next").onclick = () => flip.flipNext();
-      document.getElementById("zoomIn").onclick = () => { 
-        zoom = Math.min(MAX_ZOOM, +(zoom + 0.25).toFixed(2)); 
-        applyTransform(); 
-      };
-      document.getElementById("zoomOut").onclick = () => { 
-        zoom = Math.max(MIN_ZOOM, +(zoom - 0.25).toFixed(2)); 
-        applyTransform(); 
-      };
+      document.getElementById("zoomIn").onclick = () => { zoom = Math.min(1.4, zoom + 0.1); applyTransform(); };
+      document.getElementById("zoomOut").onclick = () => { zoom = Math.max(0.8, zoom - 0.1); applyTransform(); };
       document.getElementById("fullscreen").onclick = async () => {
-        if(!document.fullscreenElement) await document.documentElement.requestFullscreen?.();
+        if (!document.fullscreenElement) await document.documentElement.requestFullscreen?.();
         else await document.exitFullscreen?.();
       };
       document.getElementById("download").onclick = () => {
-        const a = document.createElement("a"); a.href = PDF_URL;
-        a.download = "Life-Ready-School-Profile-Wijana-Mojoagung.pdf"; a.click();
+        const a = document.createElement("a");
+        a.href = PDF_URL;
+        a.download = "Life-Ready-School-Profile-Wijana-Mojoagung.pdf";
+        a.click();
       };
 
       document.addEventListener("keydown", e => {
-        if(e.key === "ArrowLeft") flip.flipPrev();
-        if(e.key === "ArrowRight") flip.flipNext();
-        if(e.key.toLowerCase() === "f") document.getElementById("fullscreen").click();
-        if(e.key === "+" || e.key === "=") { zoom = Math.min(MAX_ZOOM, +(zoom + 0.25).toFixed(2)); applyTransform(); }
-        if(e.key === "-") { zoom = Math.max(MIN_ZOOM, +(zoom - 0.25).toFixed(2)); applyTransform(); }
+        if (e.key === "ArrowLeft") flip.flipPrev();
+        if (e.key === "ArrowRight") flip.flipNext();
+        if (e.key.toLowerCase() === "f") document.getElementById("fullscreen").click();
+        if (e.key === "+" || e.key === "=") { zoom = Math.min(1.4, zoom + 0.1); applyTransform(); }
+        if (e.key === "-") { zoom = Math.max(0.8, zoom - 0.1); applyTransform(); }
       });
 
-    } catch(err) {
+    } catch (err) {
       showError(err);
     }
   }
