@@ -214,75 +214,130 @@
 
   let pdf = null;
   let flip = null;
-  
   let zoom = 1;
   let translateX = 0;
   let pageW = 0;
+  let pageH = 0;
   let isMobile = false;
 
-  function setLoading(text){ loadingText.textContent = text; }
+  // Pelacakan status render setiap halaman agar tidak di-render ganda
+  const renderedPages = new Set();
+  const renderingPromises = new Map();
+  const canvases = [];
 
-  function showError(err){
+  function setLoading(text) { loadingText.textContent = text; }
+
+  function showError(err) {
     loading.style.display = "none";
     errorBox.style.display = "flex";
-    errorText.textContent = (err && err.message) ? err.message : "Pastikan file booklet.pdf berada satu folder dengan index.html.";
+    errorText.textContent = (err && err.message) ? err.message : "Pastikan file booklet.pdf dapat diakses.";
     console.error(err);
   }
 
-  function applyTransform(){
+  function applyTransform() {
     bookEl.style.transform = `translateX(${translateX}px) scale(${zoom})`;
     bookEl.style.transformOrigin = "center center";
   }
 
   function updateBookPosition(pageIndex) {
     if (isMobile) {
-      // Pada mobile, buku dikunci 100% di tengah tanpa ada pergeseran sama sekali
       translateX = 0;
     } else {
-      // Pada desktop, geser buku sesuai dengan posisi halaman yang dibuka (Cover, Isi, Back Cover)
       if (pageIndex === 0) {
         translateX = -(pageW / 2);
-      } 
-      else if (pageIndex === pdf.numPages - 1 && pdf.numPages % 2 === 0) {
+      } else if (pageIndex === pdf.numPages - 1 && pdf.numPages % 2 === 0) {
         translateX = (pageW / 2);
-      } 
-      else {
+      } else {
         translateX = 0;
       }
     }
     applyTransform();
   }
 
-  async function renderPage(pageNumber, canvas){
-    const page = await pdf.getPage(pageNumber);
-    const base = page.getViewport({scale: 1});
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const scale = Math.max(1.5, dpr * 1.25);
-    const viewport = page.getViewport({scale});
-    canvas.width = Math.floor(viewport.width);
-    canvas.height = Math.floor(viewport.height);
-    canvas.style.aspectRatio = `${base.width}/${base.height}`;
-    const ctx = canvas.getContext("2d", {alpha: false});
-    await page.render({canvasContext: ctx, viewport}).promise;
+  // Fungsi render on-demand dengan resolusi presisi sesuai ukuran layar
+  async function ensurePageRendered(pageNumber) {
+    if (pageNumber < 1 || pageNumber > pdf.numPages) return;
+    if (renderedPages.has(pageNumber)) return;
+    if (renderingPromises.has(pageNumber)) return renderingPromises.get(pageNumber);
+
+    const task = (async () => {
+      try {
+        const page = await pdf.getPage(pageNumber);
+        const base = page.getViewport({ scale: 1 });
+        
+        // Sesuaikan skala persis dengan lebar tampilan + max DPR 1.5 agar tajam namun ringan
+        const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+        const targetScale = (pageW / base.width) * dpr;
+        const viewport = page.getViewport({ scale: targetScale });
+
+        const canvas = canvases[pageNumber - 1];
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        canvas.style.aspectRatio = `${base.width}/${base.height}`;
+
+        const ctx = canvas.getContext("2d", { alpha: false });
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        renderedPages.add(pageNumber);
+      } finally {
+        renderingPromises.delete(pageNumber);
+      }
+    })();
+
+    renderingPromises.set(pageNumber, task);
+    return task;
   }
 
-  async function buildBook(){
+  // Preload halaman sekitar posisi aktif + render sisa halaman secara santai di background
+  async function preloadAround(centerPage1Based) {
+    const targets = [
+      centerPage1Based,
+      centerPage1Based + 1,
+      centerPage1Based + 2,
+      centerPage1Based + 3,
+      centerPage1Based - 1
+    ];
+    await Promise.all(targets.map(p => ensurePageRendered(p)));
+  }
+
+  function backgroundRenderRemaining() {
+    let current = 1;
+    const step = async () => {
+      while (current <= pdf.numPages && renderedPages.has(current)) {
+        current++;
+      }
+      if (current <= pdf.numPages) {
+        await ensurePageRendered(current);
+        current++;
+        // Beri jeda 50ms agar animasi flip tetap mulus 60fps
+        setTimeout(step, 50);
+      }
+    };
+    setTimeout(step, 400);
+  }
+
+  async function buildBook() {
     try {
-      setLoading("Membaca PDF…");
-      pdf = await pdfjsLib.getDocument(PDF_URL).promise;
+      setLoading("Memuat sampul booklet…");
+
+      // Aktifkan range request / streaming jika server mendukung
+      const loadingTask = pdfjsLib.getDocument({
+        url: PDF_URL,
+        disableAutoFetch: true,
+        disableStream: false
+      });
+      pdf = await loadingTask.promise;
 
       const first = await pdf.getPage(1);
-      const vp = first.getViewport({scale: 1});
+      const vp = first.getViewport({ scale: 1 });
       const ratio = vp.width / vp.height;
 
-      // Cek layar (menggunakan 768px menyesuaikan CSS mobile breakpoint)
       isMobile = window.innerWidth <= 768;
 
       const maxSinglePageW = isMobile ? wrap.clientWidth : wrap.clientWidth / 2;
       const maxSinglePageH = wrap.clientHeight;
 
-      const pageH = Math.min(maxSinglePageH, maxSinglePageW / ratio);
-      pageW = pageH * ratio; 
+      pageH = Math.min(maxSinglePageH, maxSinglePageW / ratio);
+      pageW = pageH * ratio;
 
       bookEl.style.width = isMobile ? `${Math.round(pageW)}px` : `${Math.round(pageW * 2)}px`;
       bookEl.style.height = `${Math.round(pageH)}px`;
@@ -295,44 +350,46 @@
         maxWidth: 900,
         minHeight: 360,
         maxHeight: 1200,
-        
-        // KUNCI PERBAIKAN: Matikan mode showCover pada layar mobile agar
-        // library memperlakukan booklet murni sebagai tampilan 1 halaman.
-        showCover: !isMobile, 
-        usePortrait: isMobile, // Paksa portrait mode di mobile
-        
+        showCover: !isMobile,
+        usePortrait: isMobile,
         mobileScrollSupport: true,
         maxShadowOpacity: 0.6,
-        flippingTime: 750, 
+        flippingTime: 750,
         autoSize: false,
         drawShadow: true,
         startPage: 0
       });
 
+      // 1. Buat kerangka DOM kosong secara instan (0 ms)
       const pages = [];
-      for(let i = 1; i <= pdf.numPages; i++){
+      for (let i = 1; i <= pdf.numPages; i++) {
         const page = document.createElement("div");
         page.className = "page";
         const canvas = document.createElement("canvas");
         canvas.setAttribute("aria-label", `Halaman ${i}`);
         page.appendChild(canvas);
         pages.push(page);
-
-        setLoading(`Menyiapkan halaman ${i} dari ${pdf.numPages}…`);
-        await renderPage(i, canvas);
+        canvases.push(canvas);
       }
 
       flip.loadFromHTML(pages);
-      
+
+      // 2. Render HANYA halaman 1, 2, dan 3 terlebih dahulu agar langsung tampil
+      await preloadAround(1);
+
       updateBookPosition(0);
-      
       pageCount.textContent = isMobile ? `1 / ${pdf.numPages}` : `Cover (1 / ${pdf.numPages})`;
       loading.style.display = "none";
 
+      // 3. Render sisa halaman secara diam-diam di latar belakang
+      backgroundRenderRemaining();
+
       flip.on("flip", e => {
-        const current = e.data; 
-        
+        const current = e.data; // 0-based index
         updateBookPosition(current);
+
+        // Pastikan halaman yang dibuka & 2 halaman berikutnya sudah siap
+        preloadAround(current + 1);
 
         let text = "";
         if (isMobile) {
@@ -355,23 +412,25 @@
       document.getElementById("zoomIn").onclick = () => { zoom = Math.min(1.4, zoom + 0.1); applyTransform(); };
       document.getElementById("zoomOut").onclick = () => { zoom = Math.max(0.8, zoom - 0.1); applyTransform(); };
       document.getElementById("fullscreen").onclick = async () => {
-        if(!document.fullscreenElement) await document.documentElement.requestFullscreen?.();
+        if (!document.fullscreenElement) await document.documentElement.requestFullscreen?.();
         else await document.exitFullscreen?.();
       };
       document.getElementById("download").onclick = () => {
-        const a = document.createElement("a"); a.href = PDF_URL;
-        a.download = "Life-Ready-School-Profile-Wijana-Mojoagung.pdf"; a.click();
+        const a = document.createElement("a");
+        a.href = PDF_URL;
+        a.download = "Life-Ready-School-Profile-Wijana-Mojoagung.pdf";
+        a.click();
       };
 
       document.addEventListener("keydown", e => {
-        if(e.key === "ArrowLeft") flip.flipPrev();
-        if(e.key === "ArrowRight") flip.flipNext();
-        if(e.key.toLowerCase() === "f") document.getElementById("fullscreen").click();
-        if(e.key === "+" || e.key === "=") { zoom = Math.min(1.4, zoom + 0.1); applyTransform(); }
-        if(e.key === "-") { zoom = Math.max(0.8, zoom - 0.1); applyTransform(); }
+        if (e.key === "ArrowLeft") flip.flipPrev();
+        if (e.key === "ArrowRight") flip.flipNext();
+        if (e.key.toLowerCase() === "f") document.getElementById("fullscreen").click();
+        if (e.key === "+" || e.key === "=") { zoom = Math.min(1.4, zoom + 0.1); applyTransform(); }
+        if (e.key === "-") { zoom = Math.max(0.8, zoom - 0.1); applyTransform(); }
       });
 
-    } catch(err) {
+    } catch (err) {
       showError(err);
     }
   }
